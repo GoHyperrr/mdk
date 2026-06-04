@@ -46,3 +46,44 @@ func Registered() map[string]Factory {
 	}
 	return out
 }
+
+// CLICommand represents a dynamic subcommand registered by a module.
+type CLICommand struct {
+	Group       string   // Command group: "auth", "commerce", etc.
+	Name        string   // Subcommand name: "apikey", "product", etc.
+	Aliases     []string // Alternative names
+	Short       string   // One-line description
+	Long        string   // Detailed description (shown in --help)
+	Usage       string   // Args pattern: "generate", "<email> <password>"
+	Run         func(rt Runtime, args []string) error
+	NeedsDB     bool     // If true, auto-connect DB before Run
+	NeedsServer bool     // If true, requires running server (validates connectivity)
+}
+
+var (
+	commandsMu sync.RWMutex
+	commands   = make(map[string]CLICommand)
+)
+
+// RegisterCommand adds a dynamic CLI subcommand to the global mdk registry.
+func RegisterCommand(cmd CLICommand) {
+	commandsMu.Lock()
+	defer commandsMu.Unlock()
+	key := cmd.Name
+	if cmd.Group != "" {
+		key = cmd.Group + "/" + cmd.Name
+	}
+	commands[key] = cmd
+}
+
+// Commands returns a list of all registered custom CLI commands.
+func Commands() []CLICommand {
+	commandsMu.RLock()
+	defer commandsMu.RUnlock()
+	res := make([]CLICommand, 0, len(commands))
+	for _, cmd := range commands {
+		res = append(res, cmd)
+	}
+	return res
+}
+

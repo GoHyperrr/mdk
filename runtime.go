@@ -23,4 +23,7 @@ type Runtime interface {
 
 	// Logger returns the structured logger.
 	Logger() *slog.Logger
+
+	// Module returns a registered and initialized module by its ID.
+	Module(id string) (Module, bool)
 }

@@ -1,6 +1,9 @@
 package mdk
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // StepStatus represents the current state of a workflow step.
 type StepStatus string
@@ -33,21 +36,32 @@ type StepResult struct {
 // StepHandler is the function signature for a workflow step.
 type StepHandler func(ctx StepContext) StepResult
 
+// Saga defines the compensation step on rollback.
+type Saga struct {
+	Uses       string     `json:"uses" yaml:"uses"`
+	IsCritical bool       `json:"is_critical" yaml:"is_critical"`
+}
+
 // Step is a single node in a workflow DAG.
 type Step struct {
-	ID         string
-	Name       string
-	DependsOn  []string    // step IDs this step waits for
-	Handler    StepHandler
-	Compensate StepHandler // called on rollback, may be nil
-	MaxRetries int
+	ID         string      `json:"id" yaml:"id"`
+	Name       string      `json:"name" yaml:"name"`
+	DependsOn  []string    `json:"depends_on" yaml:"depends_on"` // step IDs this step waits for
+	Handler    StepHandler `json:"-" yaml:"-"`
+	Compensate StepHandler `json:"-" yaml:"-"`
+	MaxRetries int         `json:"max_retries" yaml:"max_retries"`
+	Uses       string      `json:"uses" yaml:"uses"`      // For backwards compatibility and string-based resolution
+	Saga       *Saga       `json:"saga,omitempty" yaml:"saga,omitempty"`       // For backwards compatibility saga rollback
 }
 
 // Workflow is a declarative DAG of steps.
 type Workflow struct {
-	ID    string
-	Name  string
-	Steps []Step
+	ID          string         `json:"id" yaml:"id"`
+	Name        string         `json:"name" yaml:"name"`
+	Description string         `json:"description,omitempty" yaml:"description,omitempty"`
+	ExposeToAI  bool           `json:"expose_to_ai" yaml:"expose_to_ai"`
+	InputSchema map[string]any `json:"input_schema,omitempty" yaml:"input_schema,omitempty"`
+	Steps       []Step         `json:"steps" yaml:"steps"`
 }
 
 // WorkflowEngine registers and executes workflow DAGs.
@@ -63,4 +77,29 @@ type WorkflowEngine interface {
 
 	// Cancel requests cancellation of a running workflow.
 	Cancel(ctx context.Context, runID string) error
+
+	// RegisterHandler registers a named step handler for string-based step resolution.
+	RegisterHandler(name string, handler StepHandler) error
+}
+
+// LineageData defines the minimal interface for accessing workflow execution data.
+type LineageData interface {
+	GetID() string
+	GetName() string
+	GetState() string
+	GetError() string
+	GetStartedAt() time.Time
+	GetEndedAt() *time.Time
+	GetEvents() []Event
+}
+
+// Projector defines the interface for querying execution lineages.
+type Projector interface {
+	ListLineages() []LineageData
+	QueryLineages(filter func(LineageData) bool) []LineageData
+}
+
+// ProjectorProvider is implemented by modules that expose an execution lineage Projector.
+type ProjectorProvider interface {
+	Projector() Projector
 }

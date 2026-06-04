@@ -35,3 +35,9 @@ type Route struct {
 
 // Factory is a constructor function for a Module.
 type Factory func() Module
+
+// HTMLUIProvider can be implemented by modules that want to expose a dashboard UI to MCP.
+type HTMLUIProvider interface {
+	RenderHTML(ctx context.Context) (accent, accentGlow, title, content string)
+}
+
