@@ -37,4 +37,12 @@ func (m *MyModule) Init(ctx context.Context, rt mdk.Runtime) error {
 func (m *MyModule) Shutdown(ctx context.Context) error { return nil }
 ```
 
+## Configuration Access
+
+Inside your module's `Init(ctx context.Context, rt mdk.Runtime)` method, you can access environment-expanded configurations defined in `hyperrr.yml` using:
+```go
+val, ok := rt.Config("my_module_key").(string)
+```
+This preserves full domain isolation since modules only read config keys from the shared `mdk.Runtime` context.
+
 Then declare it in your `hyperrr.yml` and run `hyperrr build`.
