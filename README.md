@@ -1,5 +1,8 @@
 # mdk — Hyperrr Module Development Kit
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/GoHyperrr/mdk.svg)](https://pkg.go.dev/github.com/GoHyperrr/mdk)
+[![Go Coverage](https://github.com/GoHyperrr/mdk/wiki/coverage.svg)](https://raw.githack.com/wiki/GoHyperrr/mdk/coverage.html)
+
 The `mdk` package contains the interfaces and types needed to build a Hyperrr module.
 It has minimal dependencies and is the only Hyperrr package third-party modules need to import.
 
