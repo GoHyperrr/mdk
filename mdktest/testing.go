@@ -1,13 +1,15 @@
-package mdk
+package mdktest
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/GoHyperrr/mdk"
 	"gorm.io/gorm"
 )
 
@@ -18,7 +20,7 @@ type TestRuntime struct {
 	workflowEngine *TestWorkflowEngine
 	configs        map[string]any
 	logger         *slog.Logger
-	modules        map[string]Module
+	modules        map[string]mdk.Module
 	mu             sync.RWMutex
 }
 
@@ -28,7 +30,7 @@ func NewTestRuntime(db *gorm.DB) *TestRuntime {
 		db:      db,
 		configs: make(map[string]any),
 		logger:  slog.Default(),
-		modules: make(map[string]Module),
+		modules: make(map[string]mdk.Module),
 	}
 	tr.bus = NewTestEventBus(tr)
 	tr.workflowEngine = NewTestWorkflowEngine(tr)
@@ -39,11 +41,11 @@ func (tr *TestRuntime) DB() *gorm.DB {
 	return tr.db
 }
 
-func (tr *TestRuntime) Bus() EventBus {
+func (tr *TestRuntime) Bus() mdk.EventBus {
 	return tr.bus
 }
 
-func (tr *TestRuntime) Workflows() WorkflowEngine {
+func (tr *TestRuntime) Workflows() mdk.WorkflowEngine {
 	return tr.workflowEngine
 }
 
@@ -67,14 +69,14 @@ func (tr *TestRuntime) SetLogger(l *slog.Logger) {
 	tr.logger = l
 }
 
-func (tr *TestRuntime) Module(id string) (Module, bool) {
+func (tr *TestRuntime) Module(id string) (mdk.Module, bool) {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	m, ok := tr.modules[id]
 	return m, ok
 }
 
-func (tr *TestRuntime) SetModule(id string, m Module) {
+func (tr *TestRuntime) SetModule(id string, m mdk.Module) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.modules[id] = m
@@ -84,18 +86,18 @@ func (tr *TestRuntime) SetModule(id string, m Module) {
 type TestEventBus struct {
 	rt        *TestRuntime
 	mu        sync.RWMutex
-	handlers  map[string][]EventHandler
-	Published []Event
+	handlers  map[string][]mdk.EventHandler
+	Published []mdk.Event
 }
 
 func NewTestEventBus(rt *TestRuntime) *TestEventBus {
 	return &TestEventBus{
 		rt:       rt,
-		handlers: make(map[string][]EventHandler),
+		handlers: make(map[string][]mdk.EventHandler),
 	}
 }
 
-func (teb *TestEventBus) Publish(ctx context.Context, e Event) error {
+func (teb *TestEventBus) Publish(ctx context.Context, e mdk.Event) error {
 	teb.mu.Lock()
 	if e.OccurredAt.IsZero() {
 		e.OccurredAt = time.Now()
@@ -104,10 +106,9 @@ func (teb *TestEventBus) Publish(ctx context.Context, e Event) error {
 	teb.mu.Unlock()
 
 	teb.mu.RLock()
-	// Match key "namespace.type" or namespace.*
 	key := e.Namespace + "." + e.Type
-	handlers := append([]EventHandler{}, teb.handlers[key]...)
-	wildcardHandlers := append([]EventHandler{}, teb.handlers[e.Namespace+".*"]...)
+	handlers := append([]mdk.EventHandler{}, teb.handlers[key]...)
+	wildcardHandlers := append([]mdk.EventHandler{}, teb.handlers[e.Namespace+".*"]...)
 	teb.mu.RUnlock()
 
 	for _, h := range handlers {
@@ -119,7 +120,7 @@ func (teb *TestEventBus) Publish(ctx context.Context, e Event) error {
 	return nil
 }
 
-func (teb *TestEventBus) Subscribe(namespace, eventType string, handler EventHandler) (func(), error) {
+func (teb *TestEventBus) Subscribe(namespace, eventType string, handler mdk.EventHandler) (func(), error) {
 	teb.mu.Lock()
 	defer teb.mu.Unlock()
 	key := namespace + "." + eventType
@@ -130,11 +131,10 @@ func (teb *TestEventBus) Subscribe(namespace, eventType string, handler EventHan
 		defer teb.mu.Unlock()
 		handlers := teb.handlers[key]
 		for i, h := range handlers {
-			// Basic clean up if unsubscribe is needed.
-			// Since we can't easily compare func pointers in Go directly,
-			// a simplified unsubscribe is fine for test usage.
-			_ = h
-			_ = i
+			if reflect.ValueOf(h).Pointer() == reflect.ValueOf(handler).Pointer() {
+				teb.handlers[key] = append(handlers[:i], handlers[i+1:]...)
+				break
+			}
 		}
 	}, nil
 }
@@ -145,30 +145,30 @@ var runIDCounter int64
 type TestWorkflowEngine struct {
 	rt        *TestRuntime
 	mu        sync.RWMutex
-	workflows map[string]Workflow
-	handlers  map[string]StepHandler
-	runs      map[string]StepStatus
+	workflows map[string]mdk.Workflow
+	handlers  map[string]mdk.StepHandler
+	runs      map[string]mdk.StepStatus
 	outputs   map[string]map[string]any
 }
 
 func NewTestWorkflowEngine(rt *TestRuntime) *TestWorkflowEngine {
 	return &TestWorkflowEngine{
 		rt:        rt,
-		workflows: make(map[string]Workflow),
-		handlers:  make(map[string]StepHandler),
-		runs:      make(map[string]StepStatus),
+		workflows: make(map[string]mdk.Workflow),
+		handlers:  make(map[string]mdk.StepHandler),
+		runs:      make(map[string]mdk.StepStatus),
 		outputs:   make(map[string]map[string]any),
 	}
 }
 
-func (twe *TestWorkflowEngine) Register(w Workflow) error {
+func (twe *TestWorkflowEngine) Register(w mdk.Workflow) error {
 	twe.mu.Lock()
 	defer twe.mu.Unlock()
 	twe.workflows[w.ID] = w
 	return nil
 }
 
-func (twe *TestWorkflowEngine) RegisterHandler(name string, handler StepHandler) error {
+func (twe *TestWorkflowEngine) RegisterHandler(name string, handler mdk.StepHandler) error {
 	twe.mu.Lock()
 	defer twe.mu.Unlock()
 	twe.handlers[name] = handler
@@ -184,7 +184,7 @@ func (twe *TestWorkflowEngine) Execute(ctx context.Context, workflowID string, i
 	return runID, nil
 }
 
-func (twe *TestWorkflowEngine) Status(ctx context.Context, runID string) (StepStatus, error) {
+func (twe *TestWorkflowEngine) Status(ctx context.Context, runID string) (mdk.StepStatus, error) {
 	twe.mu.RLock()
 	defer twe.mu.RUnlock()
 	return twe.runs[runID], nil
@@ -193,7 +193,7 @@ func (twe *TestWorkflowEngine) Status(ctx context.Context, runID string) (StepSt
 func (twe *TestWorkflowEngine) Cancel(ctx context.Context, runID string) error {
 	twe.mu.Lock()
 	defer twe.mu.Unlock()
-	twe.runs[runID] = StepFailed
+	twe.runs[runID] = mdk.StepFailed
 	return nil
 }
 
@@ -206,7 +206,7 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 	}
 
 	twe.mu.Lock()
-	twe.runs[runID] = StepRunning
+	twe.runs[runID] = mdk.StepRunning
 	twe.mu.Unlock()
 
 	results := make(map[string]any)
@@ -218,10 +218,10 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 
 	completed := make(map[string]bool)
 	launched := make(map[string]bool)
-	var history []Step
+	var history []mdk.Step
 
 	for len(completed) < len(wf.Steps) {
-		var ready []Step
+		var ready []mdk.Step
 		for _, step := range wf.Steps {
 			if launched[step.ID] {
 				continue
@@ -240,7 +240,7 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 
 		if len(ready) == 0 {
 			twe.mu.Lock()
-			twe.runs[runID] = StepFailed
+			twe.runs[runID] = mdk.StepFailed
 			twe.mu.Unlock()
 			return results, fmt.Errorf("deadlock detected or unresolved dependencies in test workflow execution")
 		}
@@ -248,20 +248,17 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 		for _, step := range ready {
 			launched[step.ID] = true
 			twe.mu.RLock()
-			handler := step.Handler
-			if handler == nil && step.Uses != "" {
-				handler = twe.handlers[step.Uses]
-			}
+			handler := twe.handlers[step.Uses]
 			twe.mu.RUnlock()
 
 			if handler == nil {
 				twe.mu.Lock()
-				twe.runs[runID] = StepFailed
+				twe.runs[runID] = mdk.StepFailed
 				twe.mu.Unlock()
 				return results, fmt.Errorf("handler not found for step %s (uses %s)", step.ID, step.Uses)
 			}
 
-			sCtx := StepContext{
+			sCtx := mdk.StepContext{
 				Ctx:        ctx,
 				Runtime:    twe.rt,
 				WorkflowID: workflowID,
@@ -273,14 +270,14 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 			res := handler(sCtx)
 			if res.Err != nil {
 				twe.mu.Lock()
-				twe.runs[runID] = StepFailed
+				twe.runs[runID] = mdk.StepFailed
 				twe.mu.Unlock()
 
 				// Run compensations in reverse order
 				for i := len(history) - 1; i >= 0; i-- {
 					hStep := history[i]
-					compensate := hStep.Compensate
-					if compensate == nil && hStep.Saga != nil && hStep.Saga.Uses != "" {
+					var compensate mdk.StepHandler
+					if hStep.Saga != nil && hStep.Saga.Uses != "" {
 						twe.mu.RLock()
 						h := twe.handlers[hStep.Saga.Uses]
 						twe.mu.RUnlock()
@@ -289,7 +286,7 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 						}
 					}
 					if compensate != nil {
-						sCtxComp := StepContext{
+						sCtxComp := mdk.StepContext{
 							Ctx:        ctx,
 							Runtime:    twe.rt,
 							WorkflowID: workflowID,
@@ -314,7 +311,7 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 	}
 
 	twe.mu.Lock()
-	twe.runs[runID] = StepCompleted
+	twe.runs[runID] = mdk.StepCompleted
 	twe.outputs[runID] = results
 	twe.mu.Unlock()
 
@@ -329,7 +326,7 @@ type TestLineageData struct {
 	Error     string
 	StartedAt time.Time
 	EndedAt   *time.Time
-	Events    []Event
+	Events    []mdk.Event
 }
 
 func (tld TestLineageData) GetID() string            { return tld.ID }
@@ -338,19 +335,19 @@ func (tld TestLineageData) GetState() string         { return tld.State }
 func (tld TestLineageData) GetError() string         { return tld.Error }
 func (tld TestLineageData) GetStartedAt() time.Time  { return tld.StartedAt }
 func (tld TestLineageData) GetEndedAt() *time.Time   { return tld.EndedAt }
-func (tld TestLineageData) GetEvents() []Event       { return tld.Events }
+func (tld TestLineageData) GetEvents() []mdk.Event   { return tld.Events }
 
 // TestProjector implements Projector for testing.
 type TestProjector struct {
-	Lineages []LineageData
+	Lineages []mdk.LineageData
 }
 
-func (tp *TestProjector) ListLineages() []LineageData {
+func (tp *TestProjector) ListLineages() []mdk.LineageData {
 	return tp.Lineages
 }
 
-func (tp *TestProjector) QueryLineages(filter func(LineageData) bool) []LineageData {
-	var out []LineageData
+func (tp *TestProjector) QueryLineages(filter func(mdk.LineageData) bool) []mdk.LineageData {
+	var out []mdk.LineageData
 	for _, l := range tp.Lineages {
 		if filter(l) {
 			out = append(out, l)
@@ -359,31 +356,36 @@ func (tp *TestProjector) QueryLineages(filter func(LineageData) bool) []LineageD
 	return out
 }
 
-// TestContextModule mock implementation of core.context module.
-type TestContextModule struct {
-	Proj Projector
+// ProjectorModule is a generic mock implementation of a module that provides a Projector.
+type ProjectorModule struct {
+	ModuleID string
+	Proj     mdk.Projector
 }
 
-func (tcm *TestContextModule) ID() string {
+// ID returns the module ID, defaulting to "core.context".
+func (pm *ProjectorModule) ID() string {
+	if pm.ModuleID != "" {
+		return pm.ModuleID
+	}
 	return "core.context"
 }
 
-func (tcm *TestContextModule) Models() []any {
+func (pm *ProjectorModule) Init(ctx context.Context, rt mdk.Runtime) error {
 	return nil
 }
 
-func (tcm *TestContextModule) Routes() []Route {
+func (pm *ProjectorModule) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (tcm *TestContextModule) Init(ctx context.Context, rt Runtime) error {
+func (pm *ProjectorModule) Models() []any {
 	return nil
 }
 
-func (tcm *TestContextModule) Shutdown(ctx context.Context) error {
+func (pm *ProjectorModule) Routes() []mdk.Route {
 	return nil
 }
 
-func (tcm *TestContextModule) Projector() Projector {
-	return tcm.Proj
+func (pm *ProjectorModule) Projector() mdk.Projector {
+	return pm.Proj
 }
