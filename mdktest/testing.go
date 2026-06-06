@@ -179,7 +179,7 @@ func (twe *TestWorkflowEngine) Execute(ctx context.Context, workflowID string, i
 	val := atomic.AddInt64(&runIDCounter, 1)
 	runID := fmt.Sprintf("wf_run_%d_%d", time.Now().UnixNano(), val)
 	go func() {
-		_, _ = twe.ExecuteSync(context.Background(), runID, workflowID, input)
+		_, _ = twe.ExecuteSync(ctx, runID, workflowID, input)
 	}()
 	return runID, nil
 }
