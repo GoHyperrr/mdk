@@ -44,14 +44,12 @@ type Saga struct {
 
 // Step is a single node in a workflow DAG.
 type Step struct {
-	ID         string      `json:"id" yaml:"id"`
-	Name       string      `json:"name" yaml:"name"`
-	DependsOn  []string    `json:"depends_on" yaml:"depends_on"` // step IDs this step waits for
-	Handler    StepHandler `json:"-" yaml:"-"`
-	Compensate StepHandler `json:"-" yaml:"-"`
-	MaxRetries int         `json:"max_retries" yaml:"max_retries"`
-	Uses       string      `json:"uses" yaml:"uses"`      // For backwards compatibility and string-based resolution
-	Saga       *Saga       `json:"saga,omitempty" yaml:"saga,omitempty"`       // For backwards compatibility saga rollback
+	ID         string   `json:"id" yaml:"id"`
+	Name       string   `json:"name" yaml:"name"`
+	DependsOn  []string `json:"depends_on" yaml:"depends_on"` // step IDs this step waits for
+	MaxRetries int      `json:"max_retries" yaml:"max_retries"`
+	Uses       string   `json:"uses" yaml:"uses"` // String-based resolution key
+	Saga       *Saga    `json:"saga,omitempty" yaml:"saga,omitempty"`
 }
 
 // Workflow is a declarative DAG of steps.

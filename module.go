@@ -38,6 +38,6 @@ type Factory func() Module
 
 // HTMLUIProvider can be implemented by modules that want to expose a dashboard UI to MCP.
 type HTMLUIProvider interface {
-	RenderHTML(ctx context.Context) (accent, accentGlow, title, content string)
+	RenderHTML(ctx context.Context) (title, html string, err error)
 }
 
