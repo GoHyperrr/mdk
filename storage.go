@@ -3,6 +3,7 @@ package mdk
 import (
 	"context"
 	"io"
+	"time"
 )
 
 // ObjectStorage defines the contract for OS-level file handling.
@@ -17,5 +18,5 @@ type ObjectStorage interface {
 	Delete(ctx context.Context, path string) error
 	
 	// GetURL returns a public or signed URL for a file.
-	GetURL(ctx context.Context, path string) (string, error)
+	GetURL(ctx context.Context, path string, expiry time.Duration) (string, error)
 }

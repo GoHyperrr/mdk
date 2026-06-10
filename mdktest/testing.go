@@ -147,7 +147,7 @@ type TestWorkflowEngine struct {
 	mu        sync.RWMutex
 	workflows map[string]mdk.Workflow
 	handlers  map[string]mdk.StepHandler
-	runs      map[string]mdk.StepStatus
+	runs      map[string]mdk.WorkflowStatus
 	outputs   map[string]map[string]any
 }
 
@@ -156,7 +156,7 @@ func NewTestWorkflowEngine(rt *TestRuntime) *TestWorkflowEngine {
 		rt:        rt,
 		workflows: make(map[string]mdk.Workflow),
 		handlers:  make(map[string]mdk.StepHandler),
-		runs:      make(map[string]mdk.StepStatus),
+		runs:      make(map[string]mdk.WorkflowStatus),
 		outputs:   make(map[string]map[string]any),
 	}
 }
@@ -184,7 +184,7 @@ func (twe *TestWorkflowEngine) Execute(ctx context.Context, workflowID string, i
 	return runID, nil
 }
 
-func (twe *TestWorkflowEngine) Status(ctx context.Context, runID string) (mdk.StepStatus, error) {
+func (twe *TestWorkflowEngine) Status(ctx context.Context, runID string) (mdk.WorkflowStatus, error) {
 	twe.mu.RLock()
 	defer twe.mu.RUnlock()
 	return twe.runs[runID], nil
@@ -193,7 +193,10 @@ func (twe *TestWorkflowEngine) Status(ctx context.Context, runID string) (mdk.St
 func (twe *TestWorkflowEngine) Cancel(ctx context.Context, runID string) error {
 	twe.mu.Lock()
 	defer twe.mu.Unlock()
-	twe.runs[runID] = mdk.StepFailed
+	run := twe.runs[runID]
+	run.State = mdk.StepFailed
+	run.Error = "cancelled"
+	twe.runs[runID] = run
 	return nil
 }
 
@@ -206,7 +209,7 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 	}
 
 	twe.mu.Lock()
-	twe.runs[runID] = mdk.StepRunning
+	twe.runs[runID] = mdk.WorkflowStatus{State: mdk.StepRunning, StartedAt: time.Now()}
 	twe.mu.Unlock()
 
 	results := make(map[string]any)
@@ -240,7 +243,10 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 
 		if len(ready) == 0 {
 			twe.mu.Lock()
-			twe.runs[runID] = mdk.StepFailed
+			twe.runs[runID] = mdk.WorkflowStatus{
+				State: mdk.StepFailed,
+				Error: "deadlock detected or unresolved dependencies in test workflow execution",
+			}
 			twe.mu.Unlock()
 			return results, fmt.Errorf("deadlock detected or unresolved dependencies in test workflow execution")
 		}
@@ -253,7 +259,10 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 
 			if handler == nil {
 				twe.mu.Lock()
-				twe.runs[runID] = mdk.StepFailed
+				twe.runs[runID] = mdk.WorkflowStatus{
+					State: mdk.StepFailed,
+					Error: fmt.Sprintf("handler not found for step %s (uses %s)", step.ID, step.Uses),
+				}
 				twe.mu.Unlock()
 				return results, fmt.Errorf("handler not found for step %s (uses %s)", step.ID, step.Uses)
 			}
@@ -270,7 +279,10 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 			res := handler(sCtx)
 			if res.Err != nil {
 				twe.mu.Lock()
-				twe.runs[runID] = mdk.StepFailed
+				twe.runs[runID] = mdk.WorkflowStatus{
+					State: mdk.StepFailed,
+					Error: res.Err.Error(),
+				}
 				twe.mu.Unlock()
 
 				// Run compensations in reverse order
@@ -311,7 +323,11 @@ func (twe *TestWorkflowEngine) ExecuteSync(ctx context.Context, runID, workflowI
 	}
 
 	twe.mu.Lock()
-	twe.runs[runID] = mdk.StepCompleted
+	run := twe.runs[runID]
+	run.State = mdk.StepCompleted
+	now := time.Now()
+	run.EndedAt = &now
+	twe.runs[runID] = run
 	twe.outputs[runID] = results
 	twe.mu.Unlock()
 

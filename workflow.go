@@ -2,6 +2,7 @@ package mdk
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -62,6 +63,15 @@ type Workflow struct {
 	Steps       []Step         `json:"steps" yaml:"steps"`
 }
 
+// WorkflowStatus represents the execution status and history details of a workflow.
+type WorkflowStatus struct {
+	State     StepStatus        `json:"state"`
+	Steps     map[string]string `json:"steps,omitempty"` // stepID -> state
+	Error     string            `json:"error,omitempty"`
+	StartedAt time.Time         `json:"started_at,omitempty"`
+	EndedAt   *time.Time        `json:"ended_at,omitempty"`
+}
+
 // WorkflowEngine registers and executes workflow DAGs.
 type WorkflowEngine interface {
 	// Register makes a workflow available for execution.
@@ -71,13 +81,65 @@ type WorkflowEngine interface {
 	Execute(ctx context.Context, workflowID string, input map[string]any) (runID string, err error)
 
 	// Status returns the status of a specific run.
-	Status(ctx context.Context, runID string) (StepStatus, error)
+	Status(ctx context.Context, runID string) (WorkflowStatus, error)
 
 	// Cancel requests cancellation of a running workflow.
 	Cancel(ctx context.Context, runID string) error
 
 	// RegisterHandler registers a named step handler for string-based step resolution.
 	RegisterHandler(name string, handler StepHandler) error
+}
+
+var (
+	lineageEventsMu sync.RWMutex
+	lineageEvents   = map[string]bool{
+		"workflow.started":        true,
+		"workflow.step_started":   true,
+		"workflow.step_completed": true,
+		"workflow.step_failed":    true,
+		"workflow.step_retrying":   true,
+		"workflow.step_fallback":   true,
+		"workflow.step.started":   true,
+		"workflow.step.completed": true,
+		"workflow.step.failed":    true,
+		"workflow.step.retrying":  true,
+		"workflow.step.fallback":  true,
+		"workflow.waiting_human":   true,
+		"workflow.completed":      true,
+		"workflow.failed":         true,
+		"order.created":           true,
+		"order.paid":              true,
+	}
+	onRegisterLineageEvent func(string)
+)
+
+// RegisterLineageEvent registers an event type to be tracked by the context engine.
+func RegisterLineageEvent(eventType string) {
+	lineageEventsMu.Lock()
+	lineageEvents[eventType] = true
+	cb := onRegisterLineageEvent
+	lineageEventsMu.Unlock()
+	if cb != nil {
+		cb(eventType)
+	}
+}
+
+// GetLineageEvents returns all registered lineage events.
+func GetLineageEvents() []string {
+	lineageEventsMu.RLock()
+	defer lineageEventsMu.RUnlock()
+	events := make([]string, 0, len(lineageEvents))
+	for e := range lineageEvents {
+		events = append(events, e)
+	}
+	return events
+}
+
+// OnRegisterLineageEvent sets a callback to execute when a new lineage event is registered.
+func OnRegisterLineageEvent(cb func(string)) {
+	lineageEventsMu.Lock()
+	onRegisterLineageEvent = cb
+	lineageEventsMu.Unlock()
 }
 
 // LineageData defines the minimal interface for accessing workflow execution data.

@@ -1,6 +1,6 @@
 module github.com/GoHyperrr/mdk
 
-go 1.25.5
+go 1.25
 
 require gorm.io/gorm v1.31.1
 
