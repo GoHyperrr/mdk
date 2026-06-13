@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -137,6 +139,30 @@ func (teb *TestEventBus) Subscribe(namespace, eventType string, handler mdk.Even
 			}
 		}
 	}, nil
+}
+
+func (teb *TestEventBus) Subscribers() []mdk.SubscriptionInfo {
+	teb.mu.RLock()
+	defer teb.mu.RUnlock()
+	var list []mdk.SubscriptionInfo
+	for key, handlers := range teb.handlers {
+		parts := strings.SplitN(key, ".", 2)
+		var ns, et string
+		if len(parts) == 2 {
+			ns, et = parts[0], parts[1]
+		} else {
+			et = key
+		}
+		for _, h := range handlers {
+			funcName := runtime.FuncForPC(reflect.ValueOf(h).Pointer()).Name()
+			list = append(list, mdk.SubscriptionInfo{
+				Namespace: ns,
+				Type:      et,
+				Handler:   funcName,
+			})
+		}
+	}
+	return list
 }
 
 var runIDCounter int64

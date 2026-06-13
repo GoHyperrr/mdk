@@ -18,6 +18,13 @@ type Event struct {
 // EventHandler is a function that processes an event.
 type EventHandler func(ctx context.Context, e Event) error
 
+// SubscriptionInfo represents metadata about an active event subscription.
+type SubscriptionInfo struct {
+	Namespace string `json:"namespace"`
+	Type      string `json:"type"`
+	Handler   string `json:"handler"`
+}
+
 // EventBus is the pub/sub interface modules use to emit and react to events.
 type EventBus interface {
 	// Publish emits an event to all subscribers.
@@ -26,4 +33,7 @@ type EventBus interface {
 	// Subscribe registers a handler for a namespace+type combination.
 	// Returns an unsubscribe function.
 	Subscribe(namespace, eventType string, handler EventHandler) (unsubscribe func(), err error)
+
+	// Subscribers returns a list of all active event subscriptions.
+	Subscribers() []SubscriptionInfo
 }
