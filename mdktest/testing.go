@@ -12,8 +12,35 @@ import (
 	"time"
 
 	"github.com/GoHyperrr/mdk"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
+
+// SetupTestDB creates a new GORM DB connection with SQLite (in-memory or file-based).
+func SetupTestDB(dbFile string) (*gorm.DB, error) {
+	if dbFile == "" {
+		dbFile = ":memory:"
+	}
+	return gorm.Open(sqlite.Open(dbFile), &gorm.Config{})
+}
+
+// SetupSharedTestDB creates a new GORM DB connection with a shared in-memory SQLite database.
+func SetupSharedTestDB(dbName string) (*gorm.DB, error) {
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", dbName)
+	if dbName == "" {
+		dsn = "file::memory:?cache=shared"
+	}
+	return gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+}
+
+// NewInMemoryTestRuntime creates a TestRuntime with a new in-memory SQLite database.
+func NewInMemoryTestRuntime() (*TestRuntime, error) {
+	db, err := SetupTestDB("")
+	if err != nil {
+		return nil, err
+	}
+	return NewTestRuntime(db), nil
+}
 
 // TestRuntime is a concrete, in-memory implementation of Runtime designed for unit testing.
 type TestRuntime struct {
