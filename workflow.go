@@ -2,6 +2,7 @@ package mdk
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -61,6 +62,45 @@ type Workflow struct {
 	ExposeToAI  bool           `json:"expose_to_ai" yaml:"expose_to_ai"`
 	InputSchema map[string]any `json:"input_schema,omitempty" yaml:"input_schema,omitempty"`
 	Steps       []Step         `json:"steps" yaml:"steps"`
+}
+
+// Validate checks if the workflow definition is valid.
+func (w *Workflow) Validate() error {
+	if w.ID == "" && w.Name == "" {
+		return fmt.Errorf("workflow ID and Name cannot both be empty")
+	}
+
+	wfID := w.ID
+	if wfID == "" {
+		wfID = w.Name
+	}
+
+	stepIDs := make(map[string]bool)
+	for _, step := range w.Steps {
+		if step.ID == "" {
+			return fmt.Errorf("step ID cannot be empty in workflow %s", wfID)
+		}
+		if stepIDs[step.ID] {
+			return fmt.Errorf("duplicate step ID %q in workflow %s", step.ID, wfID)
+		}
+		stepIDs[step.ID] = true
+		if step.Uses == "" {
+			return fmt.Errorf("step %q must specify a 'uses' handler in workflow %s", step.ID, wfID)
+		}
+		for _, dep := range step.DependsOn {
+			if dep == step.ID {
+				return fmt.Errorf("step %q cannot depend on itself in workflow %s", step.ID, wfID)
+			}
+		}
+	}
+	for _, step := range w.Steps {
+		for _, dep := range step.DependsOn {
+			if !stepIDs[dep] {
+				return fmt.Errorf("step %q depends on non-existent step %q in workflow %s", step.ID, dep, wfID)
+			}
+		}
+	}
+	return nil
 }
 
 // WorkflowStatus represents the execution status and history details of a workflow.

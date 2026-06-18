@@ -24,18 +24,20 @@ func SetupTestDB(dbFile string) (*gorm.DB, error) {
 	return gorm.Open(sqlite.Open(dbFile), &gorm.Config{})
 }
 
+var testDBIDCounter int64
+
 // SetupSharedTestDB creates a new GORM DB connection with a shared in-memory SQLite database.
 func SetupSharedTestDB(dbName string) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", dbName)
 	if dbName == "" {
-		dsn = "file::memory:?cache=shared"
+		dbName = fmt.Sprintf("memdb_%d_%d", time.Now().UnixNano(), atomic.AddInt64(&testDBIDCounter, 1))
 	}
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", dbName)
 	return gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 }
 
 // NewInMemoryTestRuntime creates a TestRuntime with a new in-memory SQLite database.
 func NewInMemoryTestRuntime() (*TestRuntime, error) {
-	db, err := SetupTestDB("")
+	db, err := SetupSharedTestDB("")
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +217,9 @@ func NewTestWorkflowEngine(rt *TestRuntime) *TestWorkflowEngine {
 }
 
 func (twe *TestWorkflowEngine) Register(w mdk.Workflow) error {
+	if err := w.Validate(); err != nil {
+		return fmt.Errorf("invalid workflow: %w", err)
+	}
 	twe.mu.Lock()
 	defer twe.mu.Unlock()
 	twe.workflows[w.ID] = w
@@ -231,6 +236,11 @@ func (twe *TestWorkflowEngine) RegisterHandler(name string, handler mdk.StepHand
 func (twe *TestWorkflowEngine) Execute(ctx context.Context, workflowID string, input map[string]any) (string, error) {
 	val := atomic.AddInt64(&runIDCounter, 1)
 	runID := fmt.Sprintf("wf_run_%d_%d", time.Now().UnixNano(), val)
+	
+	twe.mu.Lock()
+	twe.runs[runID] = mdk.WorkflowStatus{State: mdk.StepRunning, StartedAt: time.Now()}
+	twe.mu.Unlock()
+
 	go func() {
 		_, _ = twe.ExecuteSync(ctx, runID, workflowID, input)
 	}()

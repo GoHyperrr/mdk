@@ -26,6 +26,17 @@ type Module interface {
 	Shutdown(ctx context.Context) error
 }
 
+// DependentModule can be implemented by modules that have explicit initialization dependencies.
+type DependentModule interface {
+	Module
+	Dependencies() []string
+}
+
+// MiddlewareProvider can be implemented by modules that want to register global HTTP middlewares.
+type MiddlewareProvider interface {
+	Middlewares() []func(http.Handler) http.Handler
+}
+
 // Route is an HTTP route a module wants to register.
 type Route struct {
 	Method  string       // "GET", "POST", etc. Empty means all methods.

@@ -28,6 +28,8 @@ type SubscriptionInfo struct {
 // EventBus is the pub/sub interface modules use to emit and react to events.
 type EventBus interface {
 	// Publish emits an event to all subscribers.
+	// If the event's OccurredAt field is zero, the EventBus implementation
+	// should set it to the current time.
 	Publish(ctx context.Context, e Event) error
 
 	// Subscribe registers a handler for a namespace+type combination.
